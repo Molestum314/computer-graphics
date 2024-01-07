@@ -1,0 +1,808 @@
+import java.util.ArrayList;
+import java.util.HashSet;
+
+PImage bannerImage;
+PImage alienImage;
+PImage shooterImage;
+PImage heartImage;
+PFont gameoverFont;
+
+int congratsStartTime;
+int congratsTimer = 0;
+int congratsTimeout = 30000;
+int congratsDuration = 30000;
+
+int gameOverStartTime;
+int gameOverTimeout = 30000;
+int gameOverDuration = 30000;
+int gameOverTimer = 0;
+
+boolean gameStarted = false;
+boolean gameOverStarted = false;
+boolean congratsStarted = false;
+boolean gameOver;
+boolean homeButtonPressed = false;
+boolean gameRestarted = false; 
+
+int alienShootInterval = 700; // Interval tembakan alien (dalam milidetik)
+int lastAlienShotTime = 0; // Waktu terakhir alien menembak
+int alienReachedPlayerStartTime;
+int alienReachedPlayerTimeout = 30000; // Waktu game over setelah alien mencapai pemain
+
+int levelX, levelY;
+float bannerX, bannerY;
+float scaleFactor = 2.0;
+int currentState = 0;
+int level = 1;
+
+Button playButton;
+Button quitButton;
+Button homeButton;
+
+Invaders invaders;
+Player player;
+
+void setup() {
+  size(800, 800);
+
+  bannerImage = loadImage("Logo.png");
+  alienImage = loadImage("Alien.png");
+  shooterImage = loadImage("Jett.png");
+  heartImage = loadImage("Heart.png");
+  gameoverFont = createFont("Arial", 40);
+
+  invaders = new Invaders(alienImage, 3);
+  player = new Player(shooterImage);
+  alienReachedPlayerStartTime = 0;
+
+  playButton = new Button(200, 400, 100, 40, "Play");
+  quitButton = new Button(500, 400, 100, 40, "Quit");
+  homeButton = new Button(width / 2 - 50, height / 2 + 50, 100, 40, "Home");
+
+  levelX = width / 2;
+  levelY = 20;
+  bannerX = width / 2 - bannerImage.width / 2;
+  bannerY = 200;
+}
+
+void draw() {
+    background(#010012);
+
+    if (currentState == 0) {
+        displayStartScreen();
+    } else if (currentState == 1) {
+        gameStarted = true;
+        if (invaders.gameOver && !gameOverStarted) {
+            currentState = 3;
+            gameOverStarted = true;
+            gameOverStartTime = millis();
+        } else if (invaders.congrats && !congratsStarted) {
+            currentState = 2;
+            congratsStarted = true;
+            congratsStartTime = millis();
+        } else {
+            displayGameScreen();
+            displayLevelScreen();
+            if (level > 3 && !invaders.congrats) {
+                invaders.congrats = true;
+            }
+        }
+    } else if (currentState == 2) {
+        int currentTime = millis();
+        int elapsedTime = currentTime - congratsStartTime;
+        int timeRemaining = congratsDuration - elapsedTime;
+        if (timeRemaining <= 0 || homeButtonPressed) {
+            currentState = 0;
+            gameStarted = false; // Reset gameStarted
+            invaders.resetGame();
+            player.resetPlayer();
+            level = 1;
+            invaders.congrats = false;
+            congratsStarted = false;
+        } else {
+            displayCongratulationsScreen(timeRemaining);
+        }
+    } else if (currentState == 3) {
+        int currentTime = millis();
+        int elapsedTime = currentTime - gameOverStartTime;
+        int timeRemaining = gameOverDuration - elapsedTime;
+        if (timeRemaining <= 0 || homeButtonPressed) {
+            currentState = 0;
+            gameStarted = false; // Reset gameStarted
+            invaders.resetGame();
+            player.resetPlayer();
+            level = 1;
+            invaders.congrats = false;
+            gameOverStarted = false;
+        } else {
+            displayGameOverScreen(timeRemaining);
+        }
+    }
+
+    // Update posisi pemain hanya jika permainan telah dimulai
+    if (gameStarted) {
+        updatePlayerPosition();
+    }
+}
+
+void displayCongratulationsScreen(int timeRemaining) {
+  if (homeButton.isMouseOver() && mousePressed) {
+    homeButtonPressed = true;
+    currentState = 0;
+    invaders.resetGame();
+    player.resetPlayer();
+    level = 1;
+    invaders.congrats = false;
+    gameRestarted = false;
+    gameOverTimer = millis();
+  }
+
+  fill(0, 255);
+  rect(0, 0, width, height);
+  fill(0, 255, 0);
+  textAlign(CENTER, CENTER);
+  textFont(gameoverFont);
+
+  displayText("Congratulations!", 40, width / 2, height / 2 - 100);
+  displayText("All Levels Passed", 30, width / 2, height / 2 - 50);
+  fill(255, 0, 0);
+  displayText("Score: " + player.score, 25, width / 2, height / 2);
+  homeButton.display();
+  textSize(20);
+  fill(255);
+  text("Returning to Home in: " + (timeRemaining / 1000) + " seconds", width / 2, height / 2 + 150);
+}
+
+  void displayCountdown(int timeRemaining) {
+  fill(255);
+  textSize(20);
+  textAlign(CENTER, CENTER);
+  text("Game Over in: " + (timeRemaining / 1000) + " seconds", width / 2, height / 2 + 100);
+}
+
+void displayLevelScreen() {
+  fill(255);
+  textSize(25);
+  textAlign(CENTER, CENTER);
+  if (level <= 3) {
+    displayText("Level " + level, 25, levelX, levelY);
+  } else {
+    fill(0);
+    rect(0, 0, width, height);
+  }
+}
+
+void displayStartScreen() {
+  image(bannerImage, bannerX, bannerY);
+  playButton.display();
+  quitButton.display();
+}
+
+void displayGameScreen() {
+  invaders.update();
+  invaders.draw();
+  
+  if (invaders.alienReachedPlayer) {
+    player.loseLife(); // Decrement player lives or take other actions as needed
+    invaders.alienReachedPlayer = false; // Reset the flag
+  }
+
+  if (!player.gameOver) {
+    player.update();
+    player.draw();
+  }
+  drawHearts();
+  fill(255);
+  textSize(25);
+  textAlign(LEFT, TOP);
+  displayText("Score: " + player.score, 25, 5, 10);
+}
+
+void displayGameOverScreen(int timeRemaining) {
+  if (homeButton.isMouseOver() && mousePressed) {
+    homeButtonPressed = true;
+  }
+  fill(0, 255);
+  rect(0, 0, width, height);
+  fill(255);
+  textAlign(CENTER, CENTER);
+  textFont(gameoverFont);
+
+  displayText("Game Over", 40, width / 2, height / 2 - 50);
+  fill(255, 0, 0);
+  displayText("Score: " + player.score, 25, width / 2, height / 2);
+  homeButton.display();
+  textSize(20);
+  fill(255);
+  text("Returning to Home in: " + (timeRemaining / 1000) + " seconds", width / 2, height / 2 + 150);
+
+  if (homeButton.isMouseOver() && mousePressed) {
+    currentState = 0;
+    invaders.resetGame();
+    player.resetPlayer();
+    level = 1;
+    invaders.congrats = false;
+    gameRestarted = false;
+    gameOverTimer = millis();
+  }
+}
+
+void displayText(String message, int size, float x, float y) {
+  textSize(size);
+  text(message, x, y);
+}
+
+void resetGame() {
+  level = 1;
+  invaders.resetGame();
+  player.resetPlayer();
+}
+
+void mousePressed() {
+  if (currentState == 0) {
+    handleMainMenuClicks();
+  } else if (currentState == 1 || currentState == 2) {
+    handleGameClicks();
+  } else if (currentState == 3 && homeButton.isMouseOver()) {
+    currentState = 0;
+    resetGame();
+    gameOverStarted = false;
+    gameStarted = false;
+  }
+}
+
+void handleGameClicks() {
+  if (homeButton.isMouseOver()) {
+    resetGame();
+    invaders.resetGame();
+    player.resetPlayer();
+    level = 1;
+    invaders.congrats = false;
+    gameRestarted = false;
+  }
+}
+
+void handleMainMenuClicks() {
+  if (playButton.isMouseOver()) {
+    currentState = 1;
+    gameStarted = true; // Menandai bahwa permainan dimulai
+  } else if (quitButton.isMouseOver()) {
+    exit();
+  }
+}
+
+void mouseMoved() {
+  playButton.hover = playButton.isMouseOver();
+  quitButton.hover = quitButton.isMouseOver();
+  homeButton.hover = homeButton.isMouseOver();
+}
+
+class Button {
+  float x, y, w, h;
+  String label;
+  boolean hover;
+
+  Button(float x, float y, float w, float h, String label) {
+    this.x = x;
+    this.y = y;
+    this.w = w;
+    this.h = h;
+    this.label = label;
+    this.hover = false;
+  }
+
+  void display() {
+    fill(hover ? color(200) : 255);
+    rect(x, y, w, h);
+    textAlign(CENTER, CENTER);
+    fill(hover ? color(0) : 0);
+    textSize(20);
+    text(label, x + w / 2, y + h / 2);
+  }
+
+  boolean isMouseOver() {
+    return mouseX > x && mouseX < x + w && mouseY > y && mouseY < y + h;
+  }
+}
+
+void drawHearts() {
+  float heartSize = 20;
+  float heartPadding = 5;
+  float heartsX = width - heartSize - heartPadding;
+  float hearts2X = heartsX - 45;
+  float heartsY = 10;
+
+  fill(255);
+  textSize(25);
+  textAlign(RIGHT, TOP);
+  text("Lives:", hearts2X - 10, heartsY);
+
+  for (int i = 0; i < player.lives; i++) {
+    image(heartImage, heartsX, heartsY, heartSize, heartSize);
+    heartsX -= heartSize + heartPadding;
+  }
+}
+
+void keyPressed() {
+  // Tambahkan pemeriksaan jika gameStarted
+  if (gameStarted) {
+    if (key == ' ') {
+      player.startShooting();
+    } else if (key == 'a') {
+      player.startMovingLeft();
+    } else if (key == 'd') {
+      player.startMovingRight();
+    }
+  }
+}
+
+void keyReleased() {
+  // Tambahkan pemeriksaan jika gameStarted
+  if (gameStarted) {
+    if (key == ' ') {
+      player.stopShooting();
+    } else if (key == 'a') {
+      player.moveLeft = false;
+    } else if (key == 'd') {
+      player.moveRight = false;
+    }
+  }
+}
+
+void updatePlayerPosition() {
+  if (player.moveLeft) {
+    player.x -= 3;
+  } else if (player.moveRight) {
+    player.x += 3;
+  }
+  player.constrain();
+}
+
+class Alien {
+  float x, y;
+  PImage image;
+
+  Alien(float x, float y, PImage image) {
+    this.x = x;
+    this.y = y;
+    this.image = image;
+  }
+
+  void draw() {
+    image(image, x, y, image.width / 30, image.height / 30);
+  }
+}
+
+class Invaders {
+  PImage alienImage;
+  int rowsCount;
+  int direction;
+  float y;
+  ArrayList<Alien> aliens;
+  ArrayList<Bullet> bullets;
+  float speed;
+  int timeSinceLastBullet;
+  boolean gameOver;
+  boolean congrats;
+  boolean alienReachedPlayer;
+  boolean isGameOver() {
+  return gameOver;
+}
+  
+
+  Invaders(PImage alienImage, int rowsCount) {
+    this.alienImage = alienImage;
+    this.rowsCount = rowsCount;
+    this.direction = 0;
+    this.y = 40;
+    this.aliens = initialiseAliens();
+    this.alienReachedPlayer = false;
+    this.bullets = new ArrayList<Bullet>();
+    this.speed = 0.2;
+    this.timeSinceLastBullet = 0;
+    this.gameOver = false;
+    this.congrats = false;
+  }
+  
+void update() {
+  if (!gameOver) {
+    // Memperbarui pergerakan alien
+    for (Alien alien : aliens) {
+      if (direction == 0) {
+        alien.x += speed;
+      } else if (direction == 1) {
+        alien.x -= speed;
+      }
+    }
+
+    // Memeriksa apakah ada alien yang mengubah arah gerakan
+    if (hasChangedDirection()) {
+      moveAlienDown();
+    }
+
+    // Jika tidak ada alien yang tersisa, lanjut ke level berikutnya
+    if (aliens.size() == 0) {
+      nextLevel();
+    }
+
+    // Menangani penembakan oleh alien
+    alienShoot();
+
+    // Periksa apakah alien telah mencapai pemain
+    if (hasAliensReachedPlayer()) {
+      alienReachedPlayer = true;
+    }
+
+    // Jika alien telah mencapai pemain, kurangi nyawa pemain dan reset flag
+    if (alienReachedPlayer) {
+      player.loseLife(); // Mengurangi nyawa pemain
+      alienReachedPlayer = false; // Reset flag
+    }
+
+    // Memperbarui peluru yang ditembakkan oleh alien
+    updateBullets();
+  } else {
+    // Jika permainan sudah berakhir, periksa kondisi kemenangan
+    if (congrats && bullets.isEmpty()) {
+      currentState = 2; // Mengatur ke layar kemenangan
+    }
+  }
+}
+      
+  boolean hasChangedDirection() {
+    for (Alien alien : aliens) {
+      if (alien.x >= width - 45 || alien.x <= 20) {
+        direction = (direction + 1) % 2;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void moveAlienDown() {
+    for (Alien alien : aliens) {
+      alien.y += 10;
+    }
+  }
+
+  void alienShoot() {
+  int currentTime = millis();
+  if (currentTime - lastAlienShotTime > alienShootInterval) {
+    ArrayList<Alien> bottomAliens = getBottomAliens();
+    if (!bottomAliens.isEmpty()) {
+      Alien shootingAlien = bottomAliens.get((int) random(bottomAliens.size()));
+      Bullet bullet = new AlienBullet(shootingAlien.x + 10, shootingAlien.y + 10);
+      bullets.add(bullet);
+      lastAlienShotTime = currentTime;
+    }
+  }
+}
+
+  ArrayList<Alien> getBottomAliens() {
+    HashSet<Float> allXPositions = getAllXPositions();
+    ArrayList<Alien> aliensAtTheBottom = new ArrayList<Alien>();
+    for (float alienAtX : allXPositions) {
+      float bestYPosition = 0;
+      Alien lowestAlien = null;
+      for (Alien alien : aliens) {
+        if (alien.x == alienAtX) {
+          if (alien.y > bestYPosition) {
+            bestYPosition = alien.y;
+            lowestAlien = alien;
+          }
+        }
+      }
+      if (lowestAlien != null) {
+        aliensAtTheBottom.add(lowestAlien);
+      }
+    }
+    return aliensAtTheBottom;
+  }
+
+  void nextLevel() {
+    bullets.clear();
+    player.bullets.clear();
+    speed += 1;
+    aliens = initialiseAliens();
+    level++;
+    
+    alienShoot();
+  }
+
+  HashSet<Float> getAllXPositions() {
+    HashSet<Float> allXPositions = new HashSet<Float>();
+    for (Alien alien : aliens) {
+      allXPositions.add(alien.x);
+    }
+    return allXPositions;
+  }
+
+  ArrayList<Alien> initialiseAliens() {
+    ArrayList<Alien> aliensList = new ArrayList<Alien>();
+    float y = 60;
+    for (int i = 0; i < rowsCount; i++) {
+      for (float x = 50; x < width - 40; x += 40) {
+        aliensList.add(new Alien(x, y, alienImage));
+      }
+      y += 35;
+    }
+    return aliensList;
+  }
+
+  void draw() {
+    for (Alien alien : aliens) {
+      alien.draw();
+    }
+
+    for (Bullet bullet : bullets) {
+      bullet.draw();
+    }
+  }
+
+  boolean checkCollision(float x, float y) {
+    for (int i = aliens.size() - 1; i >= 0; i--) {
+      Alien currentAlien = aliens.get(i);
+      if (dist(x, y, currentAlien.x + 11.5, currentAlien.y + 8) < 10) {
+        aliens.remove(i);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  boolean hasAliensReachedPlayer() {
+    for (Alien alien : aliens) {
+      if (alien.y + 15 >= player.y) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void makeABottomAlienShoot(ArrayList<Alien> bottomAliens) {
+    Alien shootingAlien = bottomAliens.get((int) random(bottomAliens.size()));
+    Bullet bullet = new AlienBullet(shootingAlien.x + 10, shootingAlien.y + 10);
+    bullets.add(bullet);
+    timeSinceLastBullet = 0;
+  }
+
+  void updateBullets() {
+    for (int i = bullets.size() - 1; i >= 0; i--) {
+      Bullet bullet = bullets.get(i);
+      bullet.update();
+      if (bullet.isOffScreen() || (bullet instanceof AlienBullet && ((AlienBullet) bullet).checkPlayerCollision())) {
+        bullets.remove(i);
+      }
+    }
+  }
+  
+void resetGame() {
+  level = 1;
+  direction = 0;
+  y = 40;
+  aliens = initialiseAliens();
+  bullets.clear();
+  speed = 0.2;
+  timeSinceLastBullet = 0;
+  gameOver = false;
+  congrats = false;
+  player.resetPlayer();
+  currentState = 0;
+
+  // Mark the game as not restarted
+  gameRestarted = false;
+
+  // Reset timer-game over
+  gameOverStartTime = millis();
+  
+  // Reset timer-congrats
+  congratsStartTime = millis();
+  
+   gameStarted = false;
+}
+
+}
+
+class Bullet {
+  float x, y;
+
+  Bullet(float x, float y) {
+    this.x = x;
+    this.y = y;
+  }
+
+  void draw() {
+    // To be overridden by subclasses
+  }
+
+  boolean isOffScreen() {
+    return y < 0 || y > height;
+  }
+
+  void update() {
+    // To be overridden by subclasses
+  }
+}
+
+class AlienBullet extends Bullet {
+  AlienBullet(float x, float y) {
+    super(x, y);
+  }
+
+  boolean checkPlayerCollision() {
+    if (dist(x, y, player.x + player.image.width / 20 / 2, player.y + player.image.height / 20 / 2) < 15) {
+      player.loseLife();
+      return true;
+    }
+    return false;
+  }
+
+  void update() {
+    y += 2;
+  }
+
+  void draw() {
+    fill(255, 0, 0);
+    rect(x, y, 3, 10);
+  }
+}
+
+    class PlayerBullet extends Bullet {
+      boolean hitAlien;
+    
+      PlayerBullet(float x, float y) {
+        super(x, y);
+        this.hitAlien = false;
+      }
+    
+      void update() {
+        if (!hitAlien) {
+          y -=6;
+    checkCollision();
+    }
+   }
+
+    void checkCollision() {
+        if (!hitAlien) {
+        if (invaders.checkCollision(x, y)) {
+        hitAlien = true;
+        player.score += 10;
+        }
+      }
+    }
+
+  void draw() {
+    fill(255);
+    rect(x, y, 3, 10);
+    }
+  }
+
+class Player {
+  PImage image;
+  float x, y;
+  ArrayList<Bullet> bullets;
+  int score;
+  int lives;
+  boolean spacePressed;
+  boolean moveLeft, moveRight;
+  boolean gameOver;
+
+
+Player(PImage shooterImage) {
+  this.image = shooterImage;
+  this.x = width / 2;
+  this.y = height - 30;
+  this.bullets = new ArrayList<Bullet>();
+  this.score = 0;
+  this.lives = 3;
+  this.spacePressed = false;
+  this.moveLeft = false;
+  this.moveRight = false;
+}
+
+void update() {
+  if (!gameOver) {
+    updateBullets();
+    updatePosition();
+  }
+}
+
+
+void updateBullets() {
+  if (spacePressed && bullets.isEmpty()) {
+  bullets.add(new PlayerBullet(x + 12, y));
+  spacePressed = false;
+}
+
+for (int i = bullets.size() - 1; i >= 0; i--) {
+    Bullet bullet = bullets.get(i);
+    bullet.update();
+    if (bullet.isOffScreen() || (bullet instanceof PlayerBullet && ((PlayerBullet) bullet).hitAlien)) {
+      bullets.remove(i);
+    }
+  }
+}
+
+void updatePosition() {
+  if (moveLeft) {
+  x -= 4; // Meningkatkan kecepatan pergerakan
+  } else if (moveRight) {
+  x += 4; // Meningkatkan kecepatan pergerakan
+  }
+
+constrain();
+
+}
+
+void draw() {
+  if (!gameOver) {
+    image(image, x, y, image.width / 20, image.height / 20);
+    drawBullets();
+  } else {
+    // Tampilkan pesan "Game Over"
+    fill(255, 0, 0);
+    textSize(40);
+    textAlign(CENTER, CENTER);
+    text("Game Over", width / 2, height / 2);
+  }
+}
+
+
+void drawBullets() {
+  for (Bullet bullet : bullets) {
+  bullet.draw();
+  }
+}
+
+void startShooting() {
+  if (!spacePressed) {
+  spacePressed = true;
+  bullets.add(new PlayerBullet(x + 15, y));
+  }
+}
+
+void stopShooting() {
+spacePressed = false;
+}
+
+void startMovingLeft() {
+  moveLeft = true;
+}
+
+void startMovingRight() {
+  moveRight = true;
+}
+
+void stopMoving() {
+moveLeft = false;
+moveRight = false;
+}
+
+void constrain() {
+  if (x < 0) {
+  x = 0;
+  } else if (x > width - image.width / 20) {
+  x = width - image.width / 20;
+  }
+}
+
+void loseLife() {
+  lives--;
+  if (lives <= 0) {
+  invaders.gameOver = true;
+  gameOver = true;
+  }
+}
+
+  void resetPlayer() {
+    x = width / 2;
+    y = height - 30;
+    bullets.clear();
+    score = 0;
+    lives = 3;
+    spacePressed = false;
+    moveLeft = false;
+    moveRight = false;
+    gameOver = false;
+  }
+}
